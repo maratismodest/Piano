@@ -83,9 +83,13 @@ final class PianoSynth {
         engine.attach(source)
         engine.mainMixerNode.outputVolume = 0.8
 
-        engine.connect(source, to: engine.mainMixerNode, format: format)
-
         do {
+            // `connectNode` replaces the deprecated `connect`, but needs macOS 27.
+            if #available(macOS 27.0, *) {
+                try engine.connectNode(source, to: engine.mainMixerNode, format: format)
+            } else {
+                engine.connect(source, to: engine.mainMixerNode, format: format)
+            }
             try engine.start()
         } catch {
             print("Audio engine failed to start: \(error)")
