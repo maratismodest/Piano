@@ -64,9 +64,13 @@ nonisolated final class VoiceBank: @unchecked Sendable {
 }
 
 /// Owns the audio engine and exposes simple note on/off controls.
+/// Plays real piano samples from the bundled SoundFont, falling back to the built-in
+/// synthesizer if the samples are disabled or fail to load.
 final class PianoSynth {
     private let engine = AVAudioEngine()
+    private let sampler = AVAudioUnitSampler()
     private let voices = VoiceBank()
+    private var usesSampler = false
 
     init() {
         #if os(iOS)
@@ -74,28 +78,66 @@ final class PianoSynth {
         try? AVAudioSession.sharedInstance().setActive(true)
         #endif
 
-        let output = engine.outputNode
-        let hwFormat = output.inputFormat(forBus: 0)
+        engine.mainMixerNode.outputVolume = 0.8
+
+        do {
+            if FeatureFlags.useSampledPiano, let url = Bundle.main.url(forResource: "UprightPianoKW", withExtension: "sf2") {
+                engine.attach(sampler)
+                try connect(sampler, format: nil)
+                try engine.start()
+                try sampler.loadSoundBankInstrument(
+                    at: url,
+                    program: 0,
+                    bankMSB: UInt8(kAUSampler_DefaultMelodicBankMSB),
+                    bankLSB: UInt8(kAUSampler_DefaultBankLSB)
+                )
+                usesSampler = true
+            } else {
+                try startSynth()
+            }
+        } catch {
+            print("Piano samples unavailable, using synthesizer: \(error)")
+            engine.stop()
+            try? startSynth()
+        }
+    }
+
+    func noteOn(_ note: Int) {
+        guard (0..<128).contains(note) else { return }
+        if usesSampler {
+            sampler.startNote(UInt8(note), withVelocity: 100, onChannel: 0)
+        } else {
+            voices.noteOn(note)
+        }
+    }
+
+    func noteOff(_ note: Int) {
+        guard (0..<128).contains(note) else { return }
+        if usesSampler {
+            sampler.stopNote(UInt8(note), onChannel: 0)
+        } else {
+            voices.noteOff(note)
+        }
+    }
+
+    /// Sets up and starts the built-in synthesizer.
+    private func startSynth() throws {
+        let hwFormat = engine.outputNode.inputFormat(forBus: 0)
         let sampleRate = hwFormat.sampleRate > 0 ? hwFormat.sampleRate : 44_100
         guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1) else { return }
 
         let source = voices.makeSourceNode(sampleRate: sampleRate)
         engine.attach(source)
-        engine.mainMixerNode.outputVolume = 0.8
-
-        do {
-            // `connectNode` replaces the deprecated `connect`, but needs macOS 27.
-            if #available(macOS 27.0, *) {
-                try engine.connectNode(source, to: engine.mainMixerNode, format: format)
-            } else {
-                engine.connect(source, to: engine.mainMixerNode, format: format)
-            }
-            try engine.start()
-        } catch {
-            print("Audio engine failed to start: \(error)")
-        }
+        try connect(source, format: format)
+        try engine.start()
     }
 
-    func noteOn(_ note: Int) { voices.noteOn(note) }
-    func noteOff(_ note: Int) { voices.noteOff(note) }
+    private func connect(_ node: AVAudioNode, format: AVAudioFormat?) throws {
+        // `connectNode` replaces the deprecated `connect`, but needs macOS 27.
+        if #available(macOS 27.0, *) {
+            try engine.connectNode(node, to: engine.mainMixerNode, format: format)
+        } else {
+            engine.connect(node, to: engine.mainMixerNode, format: format)
+        }
+    }
 }

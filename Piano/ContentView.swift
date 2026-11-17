@@ -8,6 +8,8 @@ enum FeatureFlags {
     static let showStartNoteName = false
     /// Shows the visible white key count next to the zoom stepper.
     static let showZoomLabel = false
+    /// Plays real piano samples (bundled SoundFont) instead of the built-in synthesizer.
+    static let useSampledPiano = true
 }
 
 /// A single piano key description.
