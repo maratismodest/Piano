@@ -1,5 +1,15 @@
 import SwiftUI
 
+/// Compile-time feature flags.
+enum FeatureFlags {
+    /// Shows note names on the white keys.
+    static let showKeyLabels = false
+    /// Shows the name of the first visible note next to the shift stepper.
+    static let showStartNoteName = false
+    /// Shows the visible white key count next to the zoom stepper.
+    static let showZoomLabel = false
+}
+
 /// A single piano key description.
 struct PianoKey: Identifiable {
     let note: Int          // MIDI note number
@@ -8,23 +18,36 @@ struct PianoKey: Identifiable {
     var id: Int { note }
 
     var name: String {
-        let names = ["До", "До♯", "Ре", "Ре♯", "Ми", "Фа", "Фа♯", "Соль", "Соль♯", "Ля", "Ля♯", "Си"]
+        let names: [String] = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"]
         return names[note % 12]
     }
 
-    /// Builds keys for the given number of octaves starting at `startNote` (should be a C).
-    static func keys(startNote: Int, octaves: Int) -> [PianoKey] {
-        let blackSemitones: Set<Int> = [1, 3, 6, 8, 10]
+    /// Note name with octave number in scientific pitch notation, e.g. "C4".
+    var fullName: String { "\(name)\(note / 12 - 1)" }
+
+    /// Semitone offsets of the white keys within an octave.
+    private static let whiteSemitones = [0, 2, 4, 5, 7, 9, 11]
+
+    /// MIDI note of the white key with the given absolute index (0 = C-1).
+    static func whiteNote(at index: Int) -> Int {
+        (index / 7) * 12 + whiteSemitones[index % 7]
+    }
+
+    /// Builds `whiteCount` white keys (plus the black keys between and right after them)
+    /// starting at `startNote`, which must be a white key.
+    static func keys(startNote: Int, whiteCount: Int) -> [PianoKey] {
         var result: [PianoKey] = []
-        var whiteCount = 0
-        for note in startNote..<(startNote + octaves * 12) {
-            let isBlack = blackSemitones.contains(note % 12)
-            if isBlack {
-                result.append(PianoKey(note: note, isBlack: true, whiteIndex: whiteCount - 1))
+        var whites = 0
+        var note = startNote
+        while note <= 127 {
+            if whiteSemitones.contains(note % 12) {
+                guard whites < whiteCount else { break }
+                result.append(PianoKey(note: note, isBlack: false, whiteIndex: whites))
+                whites += 1
             } else {
-                result.append(PianoKey(note: note, isBlack: false, whiteIndex: whiteCount))
-                whiteCount += 1
+                result.append(PianoKey(note: note, isBlack: true, whiteIndex: whites - 1))
             }
+            note += 1
         }
         return result
     }
@@ -33,18 +56,48 @@ struct PianoKey: Identifiable {
 struct ContentView: View {
     @State private var synth = PianoSynth()
     @State private var pressed: Set<Int> = []
-    @State private var octave = 4
+    /// Absolute index of the leftmost white key (35 = C4).
+    @State private var startWhite = 35
+    /// How many white keys fit on screen; fewer keys means wider keys (zoom in).
+    @State private var visibleWhiteKeys = 14
 
-    private var keys: [PianoKey] { PianoKey.keys(startNote: (octave + 1) * 12, octaves: 2) }
+    /// Zoom limits: from one octave to two octaves of white keys.
+    private let visibleWhiteKeysRange = 7...14
+
+    /// Allowed range for `startWhite`: from C1 up to keeping C8 as the last visible key.
+    private var startWhiteRange: ClosedRange<Int> { 14...(63 - visibleWhiteKeys + 1) }
+
+    /// Visible keys plus one off-screen white key on each side, so keys can slide in and out
+    /// when the keyboard shifts. `whiteIndex` 0 is the off-screen key on the left.
+    private var keys: [PianoKey] {
+        PianoKey.keys(startNote: PianoKey.whiteNote(at: startWhite - 1), whiteCount: visibleWhiteKeys + 2)
+    }
 
     var body: some View {
         VStack(spacing: 16) {
             HStack {
-                Text("🎹 Пианино")
+                Text("🎹 Piano")
                     .font(.largeTitle.bold())
                 Spacer()
-                Stepper("Октава: \(octave)", value: $octave, in: 1...6)
+                let zoomStepper = Stepper("Keys: \(visibleWhiteKeys)", value: $visibleWhiteKeys, in: visibleWhiteKeysRange)
                     .fixedSize()
+                if FeatureFlags.showZoomLabel {
+                    zoomStepper
+                } else {
+                    zoomStepper.labelsHidden()
+                }
+                let shiftStepper = Stepper(
+                    "Start: \(PianoKey(note: PianoKey.whiteNote(at: startWhite), isBlack: false, whiteIndex: 0).fullName)",
+                    value: $startWhite,
+                    in: startWhiteRange
+                )
+                .fixedSize()
+                // The label stays available to VoiceOver even when hidden.
+                if FeatureFlags.showStartNoteName {
+                    shiftStepper
+                } else {
+                    shiftStepper.labelsHidden()
+                }
             }
             .padding(.horizontal)
 
@@ -55,32 +108,50 @@ struct ContentView: View {
         .padding(.top)
         .background(Color(white: 0.12))
         .foregroundStyle(.white)
-        .onChange(of: octave) {
-            // Release any held notes when shifting octaves.
-            pressed.forEach { synth.noteOff($0) }
-            pressed.removeAll()
+        .onChange(of: startWhite) { releaseAll() }
+        .onChange(of: visibleWhiteKeys) {
+            releaseAll()
+            // Keep the keyboard within range after zooming out.
+            startWhite = min(startWhite, startWhiteRange.upperBound)
         }
+    }
+
+    /// Release any held notes when the visible keys change.
+    private func releaseAll() {
+        pressed.forEach { synth.noteOff($0) }
+        pressed.removeAll()
     }
 
     private var keyboard: some View {
         GeometryReader { geo in
-            let whiteKeys = keys.filter { !$0.isBlack }
-            let blackKeys = keys.filter { $0.isBlack }
-            let whiteWidth = geo.size.width / CGFloat(whiteKeys.count)
+            let whiteWidth = geo.size.width / CGFloat(visibleWhiteKeys)
             let blackWidth = whiteWidth * 0.6
             let blackHeight = geo.size.height * 0.6
+            let whiteKeys = keys.filter { !$0.isBlack }
+            let blackKeys = keys.filter { $0.isBlack }
+            // Shift by one so the off-screen buffer key sits just past the left edge.
+            let whiteX = { (key: PianoKey) in CGFloat(key.whiteIndex - 1) * whiteWidth }
+            let blackX = { (key: PianoKey) in CGFloat(key.whiteIndex) * whiteWidth - blackWidth / 2 }
 
             ZStack(alignment: .topLeading) {
-                HStack(spacing: 0) {
-                    ForEach(whiteKeys) { key in
-                        keyView(key, width: whiteWidth, height: geo.size.height)
-                    }
+                // Keys are positioned by offset and identified by note, so changing `startWhite`
+                // slides the same keys left or right instead of redrawing them in place.
+                ForEach(whiteKeys) { key in
+                    let x = whiteX(key)
+                    keyView(key, width: whiteWidth, height: geo.size.height)
+                        .offset(x: x)
+                        .allowsHitTesting(x >= 0 && x < geo.size.width)
                 }
                 ForEach(blackKeys) { key in
+                    let x = blackX(key)
                     keyView(key, width: blackWidth, height: blackHeight)
-                        .offset(x: CGFloat(key.whiteIndex + 1) * whiteWidth - blackWidth / 2)
+                        .offset(x: x)
+                        .allowsHitTesting(x + blackWidth > 0 && x < geo.size.width)
                 }
             }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            .clipped()
+            .animation(.easeInOut(duration: 0.2), value: startWhite)
         }
     }
 
@@ -97,7 +168,7 @@ struct ContentView: View {
                     .stroke(Color.black, lineWidth: 1)
             )
             .overlay(alignment: .bottom) {
-                if !key.isBlack {
+                if FeatureFlags.showKeyLabels && !key.isBlack {
                     Text(key.name)
                         .font(.caption2)
                         .foregroundStyle(.gray)
