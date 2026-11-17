@@ -79,13 +79,23 @@ struct ContentView: View {
                 Text("🎹 Piano")
                     .font(.largeTitle.bold())
                 Spacer()
-                let zoomStepper = Stepper("Keys: \(visibleWhiteKeys)", value: $visibleWhiteKeys, in: visibleWhiteKeysRange)
-                    .fixedSize()
+                Image(systemName: "magnifyingglass")
+                    .accessibilityHidden(true)
+                // Inverted so "+" zooms in (fewer, wider keys), matching the magnifier icon.
+                let zoomStepper = Stepper("Keys: \(visibleWhiteKeys)") {
+                    visibleWhiteKeys = max(visibleWhiteKeys - 1, visibleWhiteKeysRange.lowerBound)
+                } onDecrement: {
+                    visibleWhiteKeys = min(visibleWhiteKeys + 1, visibleWhiteKeysRange.upperBound)
+                }
+                .fixedSize()
                 if FeatureFlags.showZoomLabel {
                     zoomStepper
                 } else {
                     zoomStepper.labelsHidden()
                 }
+                Image(systemName: "arrow.left.and.right")
+                    .padding(.leading, 8)
+                    .accessibilityHidden(true)
                 let shiftStepper = Stepper(
                     "Start: \(PianoKey(note: PianoKey.whiteNote(at: startWhite), isBlack: false, whiteIndex: 0).fullName)",
                     value: $startWhite,
