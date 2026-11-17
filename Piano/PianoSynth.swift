@@ -83,8 +83,9 @@ final class PianoSynth {
         engine.attach(source)
         engine.mainMixerNode.outputVolume = 0.8
 
+        engine.connect(source, to: engine.mainMixerNode, format: format)
+
         do {
-            try engine.connectNode(source, to: engine.mainMixerNode, format: format)
             try engine.start()
         } catch {
             print("Audio engine failed to start: \(error)")
