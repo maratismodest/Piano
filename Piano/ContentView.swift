@@ -181,13 +181,18 @@ struct ContentView: View {
             ZStack(alignment: .topLeading) {
                 // Keys are positioned by offset and identified by note, so changing `startWhite`
                 // slides the same keys left or right instead of redrawing them in place.
+                // Off-screen buffer keys are hidden from VoiceOver.
                 ForEach(whiteKeys) { key in
+                    let x = whiteX(key)
                     keyView(key, width: whiteWidth, height: geo.size.height)
-                        .offset(x: whiteX(key))
+                        .offset(x: x)
+                        .accessibilityHidden(x < 0 || x >= geo.size.width)
                 }
                 ForEach(blackKeys) { key in
+                    let x = blackX(key)
                     keyView(key, width: blackWidth, height: blackHeight)
-                        .offset(x: blackX(key))
+                        .offset(x: x)
+                        .accessibilityHidden(x + blackWidth <= 0 || x >= geo.size.width)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)

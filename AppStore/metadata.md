@@ -70,7 +70,7 @@ Required sizes (the app supports iPhone and iPad):
 | Device | Size (landscape) | File |
 |---|---|---|
 | iPhone 6.9" | 2868 × 1320 | `Screenshots/iPhone-6.9-landscape-1.png` |
-| iPad 13" | 2752 × 2064 | not yet captured |
+| iPad 13" | 2752 × 2064 | `Screenshots/iPad-13-landscape-1.png` |
 
 ## Credits (not required)
 
