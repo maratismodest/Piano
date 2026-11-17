@@ -23,7 +23,7 @@ Your zoom and position are saved automatically.
 Turn the volume up with the side buttons. If you use Bluetooth headphones, check they are connected. If there's still no sound, close the app completely and open it again.
 
 **Does the app collect any data?**
-No. The app has no accounts, analytics, ads, or network access. See the Privacy Policy: [PRIVACY POLICY URL]
+No. The app has no accounts, analytics, ads, or network access. See the Privacy Policy: https://gist.github.com/maratismodest/07f29653e9d0f0b8bd042c72d108cccc
 
 ## Credits
 

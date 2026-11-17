@@ -56,8 +56,8 @@ or third-party SDKs.
 
 ## URLs
 
-- Privacy Policy URL: required — must be a public page (see `privacy-policy.md`)
-- Support URL: required — any public page with a way to contact you
+- Privacy Policy URL: https://gist.github.com/maratismodest/07f29653e9d0f0b8bd042c72d108cccc (source: `privacy-policy.md`)
+- Support URL: https://gist.github.com/maratismodest/18773db2dd06ed91d57aa6c8cd3ac71b (source: `support.md`)
 
 ## Copyright
 
