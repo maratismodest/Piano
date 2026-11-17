@@ -29,4 +29,4 @@ a new "Last updated" date.
 
 ## Contact
 
-Questions about this policy: [CONTACT EMAIL]
+Questions about this policy: maratismodest@gmail.com
