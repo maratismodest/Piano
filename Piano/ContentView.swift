@@ -64,6 +64,9 @@ struct ContentView: View {
     /// How many white keys fit on screen; fewer keys means wider keys (zoom in). Persisted between launches.
     @AppStorage("visibleWhiteKeys") private var visibleWhiteKeys = 14
 
+    /// Maximum keyboard height as a fraction of its width in portrait orientation.
+    private let maxPortraitKeyboardRatio: CGFloat = 0.6
+
     /// Black key size relative to a white key.
     private let blackWidthRatio: CGFloat = 0.6
     private let blackHeightRatio: CGFloat = 0.6
@@ -121,9 +124,17 @@ struct ContentView: View {
             }
             .padding(.horizontal)
 
-            keyboard
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
+            GeometryReader { geo in
+                // In portrait (e.g. iPad held upright) a full-height keyboard makes the keys
+                // absurdly long, so cap its height and keep it at the bottom, near the hands.
+                let isPortrait = geo.size.height > geo.size.width
+                let height = isPortrait ? min(geo.size.height, geo.size.width * maxPortraitKeyboardRatio) : geo.size.height
+                keyboard
+                    .frame(height: height)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
         }
         .padding(.top)
         .background(Color(white: 0.12))
