@@ -11,20 +11,20 @@
     ],
   },
   "files": [
-    { "kind": "folder", "path": "MyApp", "target-membership": [ "MyApp" ] },
+    { "kind": "folder", "path": "Piano", "target-membership": [ "Piano" ] },
     {
       "kind": "group",
       "name": "Products",
       "children": [
-        { "path": "<PRODUCTS>/MyApp.app", "id": "000000000000000000000120", "type": "wrapper.application", "index": false },
+        { "path": "<PRODUCTS>/Piano.app", "id": "000000000000000000000120", "type": "wrapper.application", "index": false },
       ],
     },
   ],
   "targets": [
     {
-      "name": "MyApp",
+      "name": "Piano",
       "id": "000000000000000100000000",
-      "product": "Products/MyApp.app",
+      "product": "Products/Piano.app",
       "product-type": "application",
       "build-phases": [
         "compile-sources",
