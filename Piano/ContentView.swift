@@ -55,11 +55,19 @@ struct PianoKey: Identifiable {
 
 struct ContentView: View {
     @State private var synth = PianoSynth()
-    @State private var pressed: Set<Int> = []
-    /// Absolute index of the leftmost white key (35 = C4).
-    @State private var startWhite = 35
-    /// How many white keys fit on screen; fewer keys means wider keys (zoom in).
-    @State private var visibleWhiteKeys = 14
+    /// The note under each finger currently on the keyboard.
+    @State private var touchNotes: [SpatialEventCollection.Event.ID: Int] = [:]
+    /// Absolute index of the leftmost white key (35 = C4). Persisted between launches.
+    @AppStorage("startWhite") private var startWhite = 35
+    /// How many white keys fit on screen; fewer keys means wider keys (zoom in). Persisted between launches.
+    @AppStorage("visibleWhiteKeys") private var visibleWhiteKeys = 14
+
+    /// Black key size relative to a white key.
+    private let blackWidthRatio: CGFloat = 0.6
+    private let blackHeightRatio: CGFloat = 0.6
+
+    /// Notes currently sounding; several fingers may hold the same note.
+    private var pressed: Set<Int> { Set(touchNotes.values) }
 
     /// Zoom limits: from one octave to two octaves of white keys.
     private let visibleWhiteKeysRange = 7...14
@@ -126,17 +134,42 @@ struct ContentView: View {
         }
     }
 
-    /// Release any held notes when the visible keys change.
+    /// Release any held notes when the visible keys change or all fingers lift.
     private func releaseAll() {
         pressed.forEach { synth.noteOff($0) }
-        pressed.removeAll()
+        touchNotes.removeAll()
+    }
+
+    /// Moves a finger to `note` (or off the keyboard when `nil`), so sliding across keys
+    /// plays each one in turn. A note only stops once no finger is holding it.
+    private func updateTouch(_ id: SpatialEventCollection.Event.ID, to note: Int?) {
+        let oldNote = touchNotes[id]
+        guard oldNote != note else { return }
+        let wasHeld = note.map { pressed.contains($0) } ?? false
+        touchNotes[id] = note
+        if let oldNote, !pressed.contains(oldNote) { synth.noteOff(oldNote) }
+        if let note, !wasHeld { synth.noteOn(note) }
+    }
+
+    /// The key at `point` in the keyboard's local coordinates; black keys sit on top of white ones.
+    private func note(at point: CGPoint, in size: CGSize) -> Int? {
+        guard point.x >= 0, point.x < size.width, point.y >= 0, point.y < size.height else { return nil }
+        let whiteWidth = size.width / CGFloat(visibleWhiteKeys)
+        let blackWidth = whiteWidth * blackWidthRatio
+        if point.y < size.height * blackHeightRatio,
+           let black = keys.first(where: { $0.isBlack && abs(point.x - CGFloat($0.whiteIndex) * whiteWidth) < blackWidth / 2 }) {
+            return black.note
+        }
+        // +1 skips the off-screen buffer key on the left.
+        let whiteIndex = Int(point.x / whiteWidth) + 1
+        return keys.first { !$0.isBlack && $0.whiteIndex == whiteIndex }?.note
     }
 
     private var keyboard: some View {
         GeometryReader { geo in
             let whiteWidth = geo.size.width / CGFloat(visibleWhiteKeys)
-            let blackWidth = whiteWidth * 0.6
-            let blackHeight = geo.size.height * 0.6
+            let blackWidth = whiteWidth * blackWidthRatio
+            let blackHeight = geo.size.height * blackHeightRatio
             let whiteKeys = keys.filter { !$0.isBlack }
             let blackKeys = keys.filter { $0.isBlack }
             // Shift by one so the off-screen buffer key sits just past the left edge.
@@ -147,20 +180,29 @@ struct ContentView: View {
                 // Keys are positioned by offset and identified by note, so changing `startWhite`
                 // slides the same keys left or right instead of redrawing them in place.
                 ForEach(whiteKeys) { key in
-                    let x = whiteX(key)
                     keyView(key, width: whiteWidth, height: geo.size.height)
-                        .offset(x: x)
-                        .allowsHitTesting(x >= 0 && x < geo.size.width)
+                        .offset(x: whiteX(key))
                 }
                 ForEach(blackKeys) { key in
-                    let x = blackX(key)
                     keyView(key, width: blackWidth, height: blackHeight)
-                        .offset(x: x)
-                        .allowsHitTesting(x + blackWidth > 0 && x < geo.size.width)
+                        .offset(x: blackX(key))
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .clipped()
+            .contentShape(Rectangle())
+            // One gesture for the whole keyboard tracks every finger separately, which allows
+            // both chords and glissando (sliding a finger across keys).
+            .gesture(
+                SpatialEventGesture()
+                    .onChanged { events in
+                        for event in events {
+                            let isActive = event.phase == .active
+                            updateTouch(event.id, to: isActive ? note(at: event.location, in: geo.size) : nil)
+                        }
+                    }
+                    .onEnded { _ in releaseAll() }
+            )
             .animation(.easeInOut(duration: 0.2), value: startWhite)
         }
     }
@@ -186,21 +228,6 @@ struct ContentView: View {
                 }
             }
             .frame(width: width, height: height)
-            .contentShape(Rectangle())
-            // Zero-distance drag gives press/release events and supports multi-touch chords.
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        if !pressed.contains(key.note) {
-                            pressed.insert(key.note)
-                            synth.noteOn(key.note)
-                        }
-                    }
-                    .onEnded { _ in
-                        pressed.remove(key.note)
-                        synth.noteOff(key.note)
-                    }
-            )
             .accessibilityLabel(key.name)
             .accessibilityAddTraits(.isButton)
     }
