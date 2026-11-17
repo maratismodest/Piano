@@ -81,10 +81,10 @@ final class PianoSynth {
 
         let source = voices.makeSourceNode(sampleRate: sampleRate)
         engine.attach(source)
-        engine.connect(source, to: engine.mainMixerNode, format: format)
         engine.mainMixerNode.outputVolume = 0.8
 
         do {
+            try engine.connectNode(source, to: engine.mainMixerNode, format: format)
             try engine.start()
         } catch {
             print("Audio engine failed to start: \(error)")
