@@ -87,7 +87,8 @@ class SoundFontSampler(context: Context, assetName: String = "UprightPianoKW.sf2
         val isLooped: Boolean
     )
 
-    private val samples = arrayOfNulls<NoteSample>(128)
+    private val noteToSample = arrayOfNulls<NoteSample>(128)
+    private val notePitchRatio = DoubleArray(128) { 1.0 }
     var isLoaded = false
         private set
 
@@ -96,8 +97,8 @@ class SoundFontSampler(context: Context, assetName: String = "UprightPianoKW.sf2
             context.assets.open(assetName).use { input ->
                 parseSf2(input)
             }
-            isLoaded = true
-        } catch (e: Exception) {
+            isLoaded = noteToSample.any { it != null }
+        } catch (_: Exception) {
             isLoaded = false
         }
     }
@@ -116,54 +117,55 @@ class SoundFontSampler(context: Context, assetName: String = "UprightPianoKW.sf2
         buffer.get(sfbk)
         if (String(sfbk) != "sfbk") return
 
-        // Find LIST 'sdta' -> 'smpl' and LIST 'pdta' -> 'shdr'
+        fun align(size: Int) = if (size % 2 == 1) size + 1 else size
+
         var smplOffset = -1
         var smplLength = 0
         var shdrOffset = -1
         var shdrLength = 0
 
-        while (buffer.remaining() >= 8) {
+        buffer.position(12)
+
+        while (buffer.position() < bytes.size && buffer.remaining() >= 8) {
             val chunkId = ByteArray(4)
             buffer.get(chunkId)
             val chunkSize = buffer.int
             val chunkStr = String(chunkId)
+            val chunkEnd = buffer.position() + align(chunkSize)
 
             if (chunkStr == "LIST" && buffer.remaining() >= 4) {
                 val listType = ByteArray(4)
                 buffer.get(listType)
-                val listStr = String(listType)
-                val subRemaining = chunkSize - 4
-                val subEnd = buffer.position() + subRemaining
+                val subEnd = chunkEnd
 
                 while (buffer.position() < subEnd && buffer.remaining() >= 8) {
                     val subId = ByteArray(4)
                     buffer.get(subId)
                     val subSize = buffer.int
                     val subStr = String(subId)
+                    val nextPos = buffer.position() + align(subSize)
+
                     if (subStr == "smpl") {
                         smplOffset = buffer.position()
                         smplLength = subSize
-                        buffer.position(buffer.position() + subSize)
                     } else if (subStr == "shdr") {
                         shdrOffset = buffer.position()
                         shdrLength = subSize
-                        buffer.position(buffer.position() + subSize)
-                    } else {
-                        buffer.position(buffer.position() + subSize)
                     }
+                    buffer.position(nextPos.coerceAtMost(bytes.size))
                 }
             } else {
-                buffer.position(buffer.position() + chunkSize)
+                buffer.position(chunkEnd.coerceAtMost(bytes.size))
             }
         }
 
         if (smplOffset > 0 && shdrOffset > 0 && smplLength > 0) {
-            val smplBuffer = ByteBuffer.wrap(bytes, smplOffset, smplLength).order(ByteOrder.LITTLE_ENDIAN)
-            val shdrBuffer = ByteBuffer.wrap(bytes, shdrOffset, shdrLength).order(ByteOrder.LITTLE_ENDIAN)
+            val rawSamples = HashMap<Int, NoteSample>()
+            val shdrBuffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
             val headerCount = shdrLength / 46
 
             for (h in 0 until headerCount) {
-                shdrBuffer.position(h * 46)
+                shdrBuffer.position(shdrOffset + h * 46)
                 val nameBytes = ByteArray(20)
                 shdrBuffer.get(nameBytes)
                 val start = shdrBuffer.int
@@ -174,15 +176,15 @@ class SoundFontSampler(context: Context, assetName: String = "UprightPianoKW.sf2
                 val originalKey = shdrBuffer.get().toInt() and 0xFF
                 shdrBuffer.get() // correction
                 shdrBuffer.short // sample link
-                val sampleType = shdrBuffer.short.toInt()
+                val sampleType = shdrBuffer.short.toInt() and 0xFFFF
 
                 // sampleType: 1 = mono, 2 = right, 4 = left, 0x8001 = linked
-                if (originalKey in 0..127 && (sampleType == 1 || sampleType == 4) && end > start && end * 2 <= smplLength) {
+                if (originalKey in 0..127 && (sampleType == 1 || sampleType == 4 || sampleType == 0x8001) && end > start && end * 2 <= smplLength) {
                     val frameCount = end - start
                     val pcm = ShortArray(frameCount)
-                    smplBuffer.position(start * 2)
-                    smplBuffer.asShortBuffer().get(pcm)
-                    samples[originalKey] = NoteSample(
+                    val pcmBuffer = ByteBuffer.wrap(bytes, smplOffset + start * 2, frameCount * 2).order(ByteOrder.LITTLE_ENDIAN)
+                    pcmBuffer.asShortBuffer().get(pcm)
+                    rawSamples[originalKey] = NoteSample(
                         data = pcm,
                         sampleRate = sampleRate,
                         loopStart = (startLoop - start).coerceAtLeast(0),
@@ -191,12 +193,22 @@ class SoundFontSampler(context: Context, assetName: String = "UprightPianoKW.sf2
                     )
                 }
             }
+
+            if (rawSamples.isNotEmpty()) {
+                val availableKeys = rawSamples.keys.toList()
+                for (note in 0..127) {
+                    val closestKey = availableKeys.minByOrNull { kotlin.math.abs(it - note) } ?: continue
+                    noteToSample[note] = rawSamples[closestKey]
+                    notePitchRatio[note] = 2.0.pow((note - closestKey).toDouble() / 12.0)
+                }
+            }
         }
     }
 
     private class ActiveVoice(
         val sample: NoteSample,
         val note: Int,
+        val pitchRatio: Double,
         var pos: Double = 0.0,
         var level: Double = 1.0,
         var gate: Boolean = true
@@ -206,10 +218,11 @@ class SoundFontSampler(context: Context, assetName: String = "UprightPianoKW.sf2
     private val voiceLock = Any()
 
     fun noteOn(note: Int) {
-        val s = samples[note] ?: return
+        val s = noteToSample[note] ?: return
+        val ratio = notePitchRatio[note]
         synchronized(voiceLock) {
             activeVoices.removeAll { it.note == note }
-            activeVoices.add(ActiveVoice(sample = s, note = note))
+            activeVoices.add(ActiveVoice(sample = s, note = note, pitchRatio = ratio))
         }
     }
 
@@ -238,7 +251,7 @@ class SoundFontSampler(context: Context, assetName: String = "UprightPianoKW.sf2
                     val sampleVal = s.data[p] / 32768.0
                     sum += sampleVal * v.level
 
-                    val step = s.sampleRate.toDouble() / outSampleRate
+                    val step = (s.sampleRate.toDouble() / outSampleRate) * v.pitchRatio
                     v.pos += step
                     if (!v.gate) {
                         v.level *= releaseDecay
