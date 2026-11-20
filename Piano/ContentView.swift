@@ -59,10 +59,14 @@ struct ContentView: View {
     @State private var synth = PianoSynth()
     /// The note under each finger currently on the keyboard.
     @State private var touchNotes: [SpatialEventCollection.Event.ID: Int] = [:]
-    /// Absolute index of the leftmost white key (35 = C4). Persisted between launches.
-    @AppStorage("startWhite") private var startWhite = 35
+    /// Default keyboard position (35 = C4) and zoom, restored by the reset button.
+    private static let defaultStartWhite = 35
+    private static let defaultVisibleWhiteKeys = 14
+
+    /// Absolute index of the leftmost white key. Persisted between launches.
+    @AppStorage("startWhite") private var startWhite = defaultStartWhite
     /// How many white keys fit on screen; fewer keys means wider keys (zoom in). Persisted between launches.
-    @AppStorage("visibleWhiteKeys") private var visibleWhiteKeys = 14
+    @AppStorage("visibleWhiteKeys") private var visibleWhiteKeys = defaultVisibleWhiteKeys
 
     /// Maximum keyboard height as a fraction of its width in portrait orientation.
     private let maxPortraitKeyboardRatio: CGFloat = 0.6
@@ -121,6 +125,13 @@ struct ContentView: View {
                 } else {
                     shiftStepper.labelsHidden()
                 }
+                Button("Reset", systemImage: "arrow.counterclockwise") {
+                    visibleWhiteKeys = Self.defaultVisibleWhiteKeys
+                    startWhite = Self.defaultStartWhite
+                }
+                .labelStyle(.iconOnly)
+                .padding(.leading, 8)
+                .disabled(visibleWhiteKeys == Self.defaultVisibleWhiteKeys && startWhite == Self.defaultStartWhite)
             }
             .padding(.horizontal)
 
