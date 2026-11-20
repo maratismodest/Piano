@@ -130,7 +130,8 @@ struct ContentView: View {
                     startWhite = Self.defaultStartWhite
                 }
                 .labelStyle(.iconOnly)
-                .padding(.leading, 8)
+                // Extra space so the reset button isn't hit by mistake next to the shift stepper.
+                .padding(.leading, 20)
                 .disabled(visibleWhiteKeys == Self.defaultVisibleWhiteKeys && startWhite == Self.defaultStartWhite)
             }
             .padding(.horizontal)
