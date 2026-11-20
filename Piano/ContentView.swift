@@ -61,7 +61,7 @@ struct ContentView: View {
     @State private var touchNotes: [SpatialEventCollection.Event.ID: Int] = [:]
     /// Default keyboard position (35 = C4) and zoom, restored by the reset button.
     private static let defaultStartWhite = 35
-    private static let defaultVisibleWhiteKeys = 14
+    private static let defaultVisibleWhiteKeys = 10
 
     /// Absolute index of the leftmost white key. Persisted between launches.
     @AppStorage("startWhite") private var startWhite = defaultStartWhite
