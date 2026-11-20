@@ -5,10 +5,9 @@ import os
 /// A metronome that generates its clicks inside the audio render callback, so beats are
 /// sample-accurate and don't drift the way a `Timer` would while the UI is busy.
 nonisolated final class Metronome: @unchecked Sendable {
-    /// Classic mechanical metronome (Maelzel) tempo marks, in beats per minute.
-    static let tempos = [40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 63, 66, 69, 72, 76, 80, 84, 88,
-                         92, 96, 100, 104, 108, 112, 116, 120, 126, 132, 138, 144, 152, 160, 168, 176,
-                         184, 192, 200, 208]
+    /// Tempo range of a classic mechanical metronome, in beats per minute, and the +/- step.
+    static let tempoRange = 40...208
+    static let tempoStep = 4
     /// Supported beats per bar (2/4, 3/4, 4/4).
     static let beatsPerBarOptions = [2, 3, 4]
 

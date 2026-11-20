@@ -103,6 +103,13 @@ struct ContentView: View {
                     .font(.largeTitle.bold())
                 Spacer()
                 metronomeMenu
+                Text("\(metronomeTempo)")
+                    .monospacedDigit()
+                    .frame(minWidth: 36)
+                    .accessibilityHidden(true)
+                Stepper("Tempo: \(metronomeTempo) BPM", value: $metronomeTempo, in: Metronome.tempoRange, step: Metronome.tempoStep)
+                    .labelsHidden()
+                    .fixedSize()
                     .padding(.trailing, 20)
                 Image(systemName: "magnifyingglass")
                     .accessibilityHidden(true)
@@ -181,15 +188,10 @@ struct ContentView: View {
         metronomeBeatsPerBar = Self.defaultMetronomeBeatsPerBar
     }
 
-    /// Tap starts or stops the metronome; long press opens tempo and time signature settings.
+    /// Tap starts or stops the metronome; long press opens the time signature setting.
+    /// The tempo has its own stepper next to the button.
     private var metronomeMenu: some View {
         Menu {
-            Picker("Tempo", selection: $metronomeTempo) {
-                ForEach(Metronome.tempos, id: \.self) { tempo in
-                    Text("\(tempo) BPM")
-                }
-            }
-            .pickerStyle(.menu)
             Picker("Time Signature", selection: $metronomeBeatsPerBar) {
                 ForEach(Metronome.beatsPerBarOptions, id: \.self) { beats in
                     Text("\(beats)/4")
