@@ -146,7 +146,6 @@ struct ContentView: View {
                     .frame(maxHeight: .infinity, alignment: .bottom)
             }
             .padding(.horizontal, 8)
-            .padding(.bottom, 8)
         }
         .padding(.top)
         .background(Color(white: 0.12))
