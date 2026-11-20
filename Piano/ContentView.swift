@@ -59,14 +59,20 @@ struct ContentView: View {
     @State private var synth = PianoSynth()
     /// The note under each finger currently on the keyboard.
     @State private var touchNotes: [SpatialEventCollection.Event.ID: Int] = [:]
-    /// Default keyboard position (35 = C4) and zoom, restored by the reset button.
+    /// Default keyboard position (35 = C4), zoom and metronome settings, restored by the reset button.
     private static let defaultStartWhite = 35
     private static let defaultVisibleWhiteKeys = 10
+    private static let defaultMetronomeTempo = 100
+    private static let defaultMetronomeBeatsPerBar = 4
 
     /// Absolute index of the leftmost white key. Persisted between launches.
     @AppStorage("startWhite") private var startWhite = defaultStartWhite
     /// How many white keys fit on screen; fewer keys means wider keys (zoom in). Persisted between launches.
     @AppStorage("visibleWhiteKeys") private var visibleWhiteKeys = defaultVisibleWhiteKeys
+    /// Metronome tempo (BPM) and beats per bar. Persisted between launches.
+    @AppStorage("metronomeTempo") private var metronomeTempo = defaultMetronomeTempo
+    @AppStorage("metronomeBeatsPerBar") private var metronomeBeatsPerBar = defaultMetronomeBeatsPerBar
+    @State private var isMetronomeOn = false
 
     /// Maximum keyboard height as a fraction of its width in portrait orientation.
     private let maxPortraitKeyboardRatio: CGFloat = 0.6
@@ -96,6 +102,8 @@ struct ContentView: View {
                 Text("🎹 Piano")
                     .font(.largeTitle.bold())
                 Spacer()
+                metronomeMenu
+                    .padding(.trailing, 20)
                 Image(systemName: "magnifyingglass")
                     .accessibilityHidden(true)
                 // Inverted so "+" zooms in (fewer, wider keys), matching the magnifier icon.
@@ -125,14 +133,11 @@ struct ContentView: View {
                 } else {
                     shiftStepper.labelsHidden()
                 }
-                Button("Reset", systemImage: "arrow.counterclockwise") {
-                    visibleWhiteKeys = Self.defaultVisibleWhiteKeys
-                    startWhite = Self.defaultStartWhite
-                }
+                Button("Reset", systemImage: "arrow.counterclockwise", action: resetSettings)
                 .labelStyle(.iconOnly)
                 // Extra space so the reset button isn't hit by mistake next to the shift stepper.
                 .padding(.leading, 20)
-                .disabled(visibleWhiteKeys == Self.defaultVisibleWhiteKeys && startWhite == Self.defaultStartWhite)
+                .disabled(isAtDefaults)
             }
             .padding(.horizontal)
 
@@ -155,6 +160,61 @@ struct ContentView: View {
             releaseAll()
             // Keep the keyboard within range after zooming out.
             startWhite = min(startWhite, startWhiteRange.upperBound)
+        }
+    }
+
+    /// Whether everything the reset button restores is already at its default.
+    private var isAtDefaults: Bool {
+        visibleWhiteKeys == Self.defaultVisibleWhiteKeys
+            && startWhite == Self.defaultStartWhite
+            && metronomeTempo == Self.defaultMetronomeTempo
+            && metronomeBeatsPerBar == Self.defaultMetronomeBeatsPerBar
+            && !isMetronomeOn
+    }
+
+    /// Restores the default keyboard zoom and position, and stops and resets the metronome.
+    private func resetSettings() {
+        visibleWhiteKeys = Self.defaultVisibleWhiteKeys
+        startWhite = Self.defaultStartWhite
+        isMetronomeOn = false
+        metronomeTempo = Self.defaultMetronomeTempo
+        metronomeBeatsPerBar = Self.defaultMetronomeBeatsPerBar
+    }
+
+    /// Tap starts or stops the metronome; long press opens tempo and time signature settings.
+    private var metronomeMenu: some View {
+        Menu {
+            Picker("Tempo", selection: $metronomeTempo) {
+                ForEach(Metronome.tempos, id: \.self) { tempo in
+                    Text("\(tempo) BPM")
+                }
+            }
+            .pickerStyle(.menu)
+            Picker("Time Signature", selection: $metronomeBeatsPerBar) {
+                ForEach(Metronome.beatsPerBarOptions, id: \.self) { beats in
+                    Text("\(beats)/4")
+                }
+            }
+            .pickerStyle(.menu)
+        } label: {
+            Label("Metronome", systemImage: isMetronomeOn ? "metronome.fill" : "metronome")
+                .labelStyle(.iconOnly)
+        } primaryAction: {
+            isMetronomeOn.toggle()
+        }
+        .accessibilityValue(isMetronomeOn ? "On, \(metronomeTempo) BPM" : "Off")
+        .onChange(of: isMetronomeOn) {
+            if isMetronomeOn {
+                synth.metronome.start(bpm: metronomeTempo, beatsPerBar: metronomeBeatsPerBar)
+            } else {
+                synth.metronome.stop()
+            }
+        }
+        .onChange(of: metronomeTempo) {
+            synth.metronome.update(bpm: metronomeTempo, beatsPerBar: metronomeBeatsPerBar)
+        }
+        .onChange(of: metronomeBeatsPerBar) {
+            synth.metronome.update(bpm: metronomeTempo, beatsPerBar: metronomeBeatsPerBar)
         }
     }
 

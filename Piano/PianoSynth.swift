@@ -71,6 +71,8 @@ final class PianoSynth {
     private let sampler = AVAudioUnitSampler()
     private let voices = VoiceBank()
     private var usesSampler = false
+    /// Shares the piano's engine so clicks and notes stay in sync.
+    let metronome = Metronome()
 
     init() {
         #if os(iOS)
@@ -79,6 +81,7 @@ final class PianoSynth {
         #endif
 
         engine.mainMixerNode.outputVolume = 0.8
+        attachMetronome()
 
         do {
             if FeatureFlags.useSampledPiano, let url = Bundle.main.url(forResource: "UprightPianoKW", withExtension: "sf2") {
@@ -122,14 +125,26 @@ final class PianoSynth {
 
     /// Sets up and starts the built-in synthesizer.
     private func startSynth() throws {
-        let hwFormat = engine.outputNode.inputFormat(forBus: 0)
-        let sampleRate = hwFormat.sampleRate > 0 ? hwFormat.sampleRate : 44_100
-        guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1) else { return }
-
-        let source = voices.makeSourceNode(sampleRate: sampleRate)
+        guard let format = monoOutputFormat() else { return }
+        let source = voices.makeSourceNode(sampleRate: format.sampleRate)
         engine.attach(source)
         try connect(source, format: format)
         try engine.start()
+    }
+
+    /// Adds the metronome before the engine starts; it stays silent until started.
+    private func attachMetronome() {
+        guard let format = monoOutputFormat() else { return }
+        let source = metronome.makeSourceNode(sampleRate: format.sampleRate)
+        engine.attach(source)
+        try? connect(source, format: format)
+    }
+
+    /// Mono format at the hardware sample rate, for nodes that generate their own audio.
+    private func monoOutputFormat() -> AVAudioFormat? {
+        let hwFormat = engine.outputNode.inputFormat(forBus: 0)
+        let sampleRate = hwFormat.sampleRate > 0 ? hwFormat.sampleRate : 44_100
+        return AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)
     }
 
     private func connect(_ node: AVAudioNode, format: AVAudioFormat?) throws {
